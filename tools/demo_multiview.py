@@ -17,7 +17,13 @@ tracking = False
 drawing = False
 is_file = False
 view_id = 0
-num_views = 4
+
+def bbox_to_target(box):
+    w = np.abs(bbox[2] - bbox[0])
+    h = np.abs(bbox[3] - bbox[1])
+    target_pos = np.array([bbox[0] + w / 2, bbox[1] + h / 2])
+    target_sz = np.array([w, h])
+    return (target_pos, target_sz)
 
 def mouse_event_callback(event, x, y, flags, param):
     global bbox, siammask, img, img_raw, state, tracking, drawing
@@ -41,7 +47,7 @@ def mouse_event_callback(event, x, y, flags, param):
         target_pos = np.array([bbox[0] + w / 2, bbox[1] + h / 2])
         target_sz = np.array([w, h])
         if view_id is 0:
-            state = siamese_init(img_raw, target_pos, target_sz, siammask, cfg['hp'], device=device, num_views=num_views)  # init tracker
+            state = siamese_init(img_raw, target_pos, target_sz, siammask, cfg['hp'], device=device)  # init tracker
         else:
             state = siamese_init_multiview(img_raw, target_pos, target_sz, state, cfg['hp'], device=device, view_id=view_id)  # init tracker
 
@@ -75,10 +81,11 @@ if __name__ == '__main__':
 
     siammask.eval().to(device)
 
-    siammask2 = copy.deepcopy(siammask)
-
     try:
-        vid_path = int(args.base_path)
+        if args.base_path:
+            vid_path = int(args.base_path)
+        else:
+            vid_path = 0
     except ValueError:
         vid_path = args.base_path
 
@@ -111,8 +118,9 @@ if __name__ == '__main__':
                 mask = state['mask'] > state['p'].seg_thr
                 
                 img[:, :, 2] = (mask > 0) * 255 + (mask == 0) * img[:, :, 2]
-                cv2.polylines(img, [np.int0(location).reshape((-1, 1, 2))], True, (0, 255, 0), 3)
-
+                bbox_pts = [np.int0(location).reshape((-1, 1, 2))]
+                cv2.polylines(img, bbox_pts, True, (0, 255, 0), 3)
+                print(state['bbox'])
                 print(state['score'])
                 
         cv2.imshow("SiamMask", img)
@@ -123,7 +131,6 @@ if __name__ == '__main__':
 
         elif k == ord('s'):
             tracking = False
-
         elif k == ord('1'):
             view_id = 0
             print(view_id)
@@ -136,6 +143,18 @@ if __name__ == '__main__':
         elif k == ord('4'):
             view_id = 3
             print(view_id)
+        elif k == ord('n'):
+            if tracking:
+                if view_id == 0:
+                    view_id = view_id + 1
+
+                target_pos, target_sz = bbox_to_target(state['bbox'])
+                
+                state = siamese_init_multiview(img_raw, target_pos, target_sz, state, cfg['hp'], device=device, view_id=view_id)  # init tracker
+                
+                print('saved a view: ' + str(view_id))
+                
+                view_id = (view_id + 1)
             
         # todo: should do a calculation to see how much leftover to sleep
         if is_file and playing:

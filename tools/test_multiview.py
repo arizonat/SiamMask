@@ -48,6 +48,39 @@ parser.add_argument('--video', default='', type=str, help='test special video')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
 parser.add_argument('--debug', action='store_true', help='debug mode')
 
+def img_score(z,s,net):
+    zi = Variable(im_to_torch(z).unsqueeze(0)).to('cuda')
+    si = Variable(im_to_torch(s).unsqueeze(0)).to('cuda')
+    scores, delta = net.comp(zi,si)
+    scores = F.softmax(scores.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
+                                                                                                    1].cpu().numpy()
+    return np.max(scores)
+
+def summary_score(z, S, net):
+    best_score = -np.Inf
+    best_s = None
+    for s in S:
+        # todo: why is this an array of scores?
+        tmp_score = img_score(z,s,net)
+        if tmp_score > best_score:
+            best_score = tmp_score
+            best_s = s
+    return (best_score, best_s)
+
+def mean_summary_score(S, net):
+    if len(S) == 1:
+        return 1.0
+    
+    mean_score = 0.0
+    Sr = [i for i in S if i is not None]
+    nS = len(Sr)
+    for i in range(nS):
+        Src = Sr.copy()
+        z = Src.pop(i)
+        mean_score += summary_score(z, Src, net)[0]
+    mean_score = mean_score / float(nS)
+    return mean_score
+
 def to_torch(ndarray):
     if type(ndarray).__module__ == 'numpy':
         return torch.from_numpy(ndarray)
@@ -124,7 +157,7 @@ def generate_anchor(cfg, score_size):
     anchor[:, 0], anchor[:, 1] = xx.astype(np.float32), yy.astype(np.float32)
     return anchor
 
-def siamese_init_multiview(im, target_pos, target_sz, state, hp=None, device='cpu', view_id=0):
+def siamese_init_multiview(im, target_pos, target_sz, state, hp=None, device='cpu'):
     p = state['p']
     net = state['net']
     avg_chans = np.mean(im, axis=(0, 1))
@@ -136,14 +169,24 @@ def siamese_init_multiview(im, target_pos, target_sz, state, hp=None, device='cp
     # initialize the exemplar
     z_crop = get_subwindow_tracking(im, target_pos, p.exemplar_size, s_z, avg_chans, out_mode='raw')
 
+    view_id = len(state['views'])
     cv2.imshow("exemplar "+str(view_id),z_crop)
     cv2.waitKey(1)
     
-    state['views'][view_id] = z_crop
+    state['views'].append(z_crop)
     
     z = Variable(im_to_torch(z_crop).unsqueeze(0))
     net.template(z.to(device))
 
+    if view_id > 0:
+        for vid in range(view_id,-1,-1):
+            view0 = state['views'][vid]
+            v = Variable(im_to_torch(view0).unsqueeze(0))
+            score, delta = net.comp(z.to(device), v.to(device))
+            score = F.softmax(score.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
+                                                                                                    1].cpu().numpy()
+            #print(str(view_id)+" comp with "+str(vid)+": "+str(np.max(score)))
+        
     if p.windowing == 'cosine':
         window = np.outer(np.hanning(p.score_size), np.hanning(p.score_size))
     elif p.windowing == 'uniform':
@@ -158,7 +201,7 @@ def siamese_init_multiview(im, target_pos, target_sz, state, hp=None, device='cp
     state['target_sz'] = target_sz
     return state
 
-def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu', num_views=4):
+def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu'):
     state = dict()
     state['im_h'] = im.shape[0]
     state['im_w'] = im.shape[1]
@@ -183,9 +226,8 @@ def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu', num_vi
     cv2.imshow("exemplar "+str(0),z_crop)
     cv2.waitKey(1)
     
-    state['views'] = [None]*num_views
-    state['views'][0] = z_crop
-    state['num_views'] = num_views
+    state['views'] = []
+    state['views'].append(z_crop)
 
     z = Variable(im_to_torch(z_crop).unsqueeze(0))
     net.template(z.to(device))
@@ -202,10 +244,10 @@ def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu', num_vi
     state['window'] = window
     state['target_pos'] = target_pos
     state['target_sz'] = target_sz
-
+    state['threshold'] = 0.99
     return state
 
-def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, device='cpu', debug=False):
+def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, device='cpu', debug=False, auto_add_view=True):
     p = state['p']
     net = state['net']
     avg_chans = state['avg_chans']
@@ -228,21 +270,24 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
         cv2.rectangle(im_debug, (crop_box_int[0], crop_box_int[1]),
                       (crop_box_int[0] + crop_box_int[2], crop_box_int[1] + crop_box_int[3]), (255, 0, 0), 2)
         cv2.imshow('search area', im_debug)
-        cv2.waitKey(1)
+        #cv2.waitKey(1)
 
     # extract scaled crops for search region x at previous target position
-    x_crop = Variable(get_subwindow_tracking(im, target_pos, p.instance_size, round(s_x), avg_chans).unsqueeze(0))
-    #x_crop = Variable(im_to_torch(im).unsqueeze(0))
+    #x_crop = Variable(get_subwindow_tracking(im, target_pos, p.instance_size, round(s_x), avg_chans).unsqueeze(0))
+    x_crop = get_subwindow_tracking(im, target_pos, p.instance_size, round(s_x), avg_chans, out_mode="raw")
 
+    if debug:
+        cv2.imshow('cropped search area', x_crop)
+        #cv2.waitKey(1)
+    
+    x_crop = Variable(im_to_torch(x_crop).unsqueeze(0))
+    
     best_view_id = -1
     best_pscore = None
     best_pscore_val = -1
     best_delta = None
 
-    for view_id in range(state['num_views']):
-        if state['views'][view_id] is None:
-            continue
-        
+    for view_id in range(len(state['views'])):
         z_crop = state['views'][view_id]
         z = Variable(im_to_torch(z_crop).unsqueeze(0))
         net.template(z.to(device))
@@ -251,7 +296,6 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
             score, delta, mask = net.track_mask(x_crop.to(device))
         else:
             score, delta = net.track(x_crop.to(device))
-
         delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1).data.cpu().numpy()
         score = F.softmax(score.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
                                                                                                     1].cpu().numpy()
@@ -292,8 +336,7 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
             best_view_id = view_id
             best_delta = delta
 
-    #print("*"*10)
-    print(best_view_id)
+    #print(best_view_id)
 
     delta = best_delta
     best_pscore_id = np.argmax(best_pscore)
@@ -352,10 +395,10 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
         if len(contours) != 0 and np.max(cnt_area) > 100:
             contour = contours[np.argmax(cnt_area)]  # use max area polygon
             polygon = contour.reshape(-1, 2)
-            # pbox = cv2.boundingRect(polygon)  # Min Max Rectangle
+            pbox = cv2.boundingRect(polygon)  # Min Max Rectangle
             prbox = cv2.boxPoints(cv2.minAreaRect(polygon))  # Rotated Rectangle
 
-            # box_in_img = pbox
+            box_in_img = pbox
             rbox_in_img = prbox
         else:  # empty mask
             location = cxy_wh_2_rect(target_pos, target_sz)
@@ -363,12 +406,29 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
                                     [location[0] + location[2], location[1]],
                                     [location[0] + location[2], location[1] + location[3]],
                                     [location[0], location[1] + location[3]]])
+            box_in_img = rbox_in_img
 
     target_pos[0] = max(0, min(state['im_w'], target_pos[0]))
     target_pos[1] = max(0, min(state['im_h'], target_pos[1]))
     target_sz[0] = max(10, min(state['im_w'], target_sz[0]))
     target_sz[1] = max(10, min(state['im_h'], target_sz[1]))
 
+    if auto_add_view:
+        hc_z = target_sz[1] + p.context_amount * sum(target_sz)
+        wc_z = target_sz[0] + p.context_amount * sum(target_sz)
+        s_z = round(np.sqrt(wc_z * hc_z))
+        z_crop = get_subwindow_tracking(im, target_pos, p.exemplar_size, s_z, state['avg_chans'], out_mode="raw")
+
+        z_summary_score = summary_score(z_crop, state['views'], net)[0]
+        #print("z sum score: " + str(z_summary_score))
+        #print("mean score: " + str(mean_summary_score(state['views'], net)))
+
+        #if z_summary_score < mean_summary_score(state['views'], net) and z_summary_score > 0.75:
+        if z_summary_score < state['threshold'] and z_summary_score > 1-((1-state['threshold'])*2):
+            #state['views'].append(z_crop)
+            state['threshold'] = 1-((1-state['threshold'])*2)
+            siamese_init_multiview(im, target_pos, target_sz, state, device=device)
+    
     # if score[best_pscore_id] >= 0.999:
     #     wc_z = target_sz[0] + p.context_amount * sum(target_sz)
     #     hc_z = target_sz[1] + p.context_amount * sum(target_sz)
@@ -384,6 +444,7 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
     state['score'] = score[best_pscore_id]
     state['mask'] = mask_in_img if mask_enable else []
     state['ploygon'] = rbox_in_img if mask_enable else []
+    state['bbox'] = box_in_img if mask_enable else []
     state['search_box'] = np.int0(crop_box) if debug else []
     return state
 
@@ -727,7 +788,7 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
                 target_sz = np.array([w, h])
                 state = siamese_init(im, target_pos, target_sz, model, hp, device=device)  # init tracker
             elif end_frame >= f > start_frame:  # tracking
-                state = siamese_track(state, im, mask_enable, refine_enable, device=device)  # track
+                state = siamese_track_multiview(state, im, mask_enable, refine_enable, device=device)  # track
                 mask = state['mask']
             toc += cv2.getTickCount() - tic
             if end_frame >= f >= start_frame:
@@ -768,7 +829,7 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
 
     logger.info('({:d}) Video: {:12s} Time: {:02.1f}s Speed: {:3.1f}fps'.format(
         v_id, video['name'], toc, f*len(object_ids) / toc))
-
+    logger.info('Number frames initiated: %d'%(len(state['views'])))
     return multi_mean_iou, f*len(object_ids) / toc
 
 

@@ -173,6 +173,12 @@ class Custom(SiamMask):
     def template(self, template):
         self.zf = self.features(template)
 
+    def comp(self, template1, template2):
+        t1 = self.features(template1)
+        t2 = self.features(template2)
+        rpn_pred_cls, rpn_pred_loc = self.rpn(t1, t2)
+        return rpn_pred_cls, rpn_pred_loc
+
     def track(self, search):
         search = self.features(search)
         rpn_pred_cls, rpn_pred_loc = self.rpn(self.zf, search)

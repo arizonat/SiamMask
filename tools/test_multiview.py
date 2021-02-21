@@ -27,6 +27,8 @@ from utils.tracker_config import TrackerConfig
 from utils.config_helper import load_config
 from utils.pyvotkit.region import vot_overlap, vot_float2str
 
+import matplotlib.pyplot as plt
+
 thrs = np.arange(0.3, 0.5, 0.05)
 
 parser = argparse.ArgumentParser(description='Test SiamMask')
@@ -48,26 +50,29 @@ parser.add_argument('--video', default='', type=str, help='test special video')
 parser.add_argument('--cpu', action='store_true', help='cpu mode')
 parser.add_argument('--debug', action='store_true', help='debug mode')
 
-def img_score(z,s,net):
-    zi = Variable(im_to_torch(z).unsqueeze(0)).to('cuda')
-    si = Variable(im_to_torch(s).unsqueeze(0)).to('cuda')
-    scores, delta = net.comp(zi,si)
+def img_score(z,s,net,is_latent):
+    if not is_latent:
+        zi = Variable(im_to_torch(z).unsqueeze(0)).to('cuda')
+        si = Variable(im_to_torch(s).unsqueeze(0)).to('cuda')
+        scores, delta = net.comp(zi,si)
+    else:
+        scores, delta = net.comp_latent(z,s)
     scores = F.softmax(scores.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
                                                                                                     1].cpu().numpy()
     return np.max(scores)
 
-def summary_score(z, S, net):
+def summary_score(z, S, net, is_latent=True):
     best_score = -np.Inf
     best_s = None
     for s in S:
         # todo: why is this an array of scores?
-        tmp_score = img_score(z,s,net)
+        tmp_score = img_score(z,s,net,is_latent)
         if tmp_score > best_score:
             best_score = tmp_score
             best_s = s
     return (best_score, best_s)
 
-def mean_summary_score(S, net):
+def mean_summary_score(S, net, is_latent=True):
     if len(S) == 1:
         return 1.0
     
@@ -77,7 +82,7 @@ def mean_summary_score(S, net):
     for i in range(nS):
         Src = Sr.copy()
         z = Src.pop(i)
-        mean_score += summary_score(z, Src, net)[0]
+        mean_score += summary_score(z, Src, net, is_latent)[0]
     mean_score = mean_score / float(nS)
     return mean_score
 
@@ -176,15 +181,17 @@ def siamese_init_multiview(im, target_pos, target_sz, state, hp=None, device='cp
     state['views'].append(z_crop)
     
     z = Variable(im_to_torch(z_crop).unsqueeze(0))
-    net.template(z.to(device))
+    zf = net.template(z.to(device))
 
-    if view_id > 0:
-        for vid in range(view_id,-1,-1):
-            view0 = state['views'][vid]
-            v = Variable(im_to_torch(view0).unsqueeze(0))
-            score, delta = net.comp(z.to(device), v.to(device))
-            score = F.softmax(score.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
-                                                                                                    1].cpu().numpy()
+    state['latent_views'].append(zf)
+    
+    #if view_id > 0:
+    #    for vid in range(view_id,-1,-1):
+    #        view0 = state['views'][vid]
+    #        v = Variable(im_to_torch(view0).unsqueeze(0))
+    #        score, delta = net.comp(z.to(device), v.to(device))
+    #        score = F.softmax(score.permute(1, 2, 3, 0).contiguous().view(2, -1).permute(1, 0), dim=1).data[:,
+    #                                                                                                1].cpu().numpy()
             #print(str(view_id)+" comp with "+str(vid)+": "+str(np.max(score)))
         
     if p.windowing == 'cosine':
@@ -227,10 +234,14 @@ def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu'):
     cv2.waitKey(1)
     
     state['views'] = []
+    state['latent_views'] = []
+    
     state['views'].append(z_crop)
 
     z = Variable(im_to_torch(z_crop).unsqueeze(0))
-    net.template(z.to(device))
+    zf = net.template(z.to(device))
+
+    state['latent_views'].append(zf)
 
     if p.windowing == 'cosine':
         window = np.outer(np.hanning(p.score_size), np.hanning(p.score_size))
@@ -245,6 +256,8 @@ def siamese_init(im, target_pos, target_sz, model, hp=None, device='cpu'):
     state['target_pos'] = target_pos
     state['target_sz'] = target_sz
     state['threshold'] = 0.99
+    state['summary_score'] = 1.0
+    state['score'] = 1.0
     return state
 
 def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, device='cpu', debug=False, auto_add_view=True):
@@ -287,13 +300,18 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
     best_pscore_val = -1
     best_delta = None
 
+    feats = []
+    corr_feats = []
     for view_id in range(len(state['views'])):
-        z_crop = state['views'][view_id]
-        z = Variable(im_to_torch(z_crop).unsqueeze(0))
-        net.template(z.to(device))
-
+        #z_crop = state['views'][view_id]
+        #z = Variable(im_to_torch(z_crop).unsqueeze(0))
+        #net.template(z.to(device))
+        zf = state['latent_views'][view_id]
+        
         if mask_enable:
-            score, delta, mask = net.track_mask(x_crop.to(device))
+            score, delta, mask, feat, corr_feat = net.track_mask_latent(zf, x_crop.to(device))
+            feats.append(feat)
+            corr_feats.append(corr_feat)
         else:
             score, delta = net.track(x_crop.to(device))
         delta = delta.permute(1, 2, 3, 0).contiguous().view(4, -1).data.cpu().numpy()
@@ -359,7 +377,7 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
         delta_x, delta_y = best_pscore_id_mask[2], best_pscore_id_mask[1]
 
         if refine_enable:
-            mask = net.track_refine((delta_y, delta_x)).to(device).sigmoid().squeeze().view(
+            mask = net.track_refine_latent((delta_y, delta_x), feats[best_view_id], corr_feats[best_view_id]).to(device).sigmoid().squeeze().view(
                 p.out_size, p.out_size).cpu().data.numpy()
         else:
             mask = mask[0, :, delta_y, delta_x].sigmoid(). \
@@ -418,8 +436,10 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
         wc_z = target_sz[0] + p.context_amount * sum(target_sz)
         s_z = round(np.sqrt(wc_z * hc_z))
         z_crop = get_subwindow_tracking(im, target_pos, p.exemplar_size, s_z, state['avg_chans'], out_mode="raw")
-
-        z_summary_score = summary_score(z_crop, state['views'], net)[0]
+        z = Variable(im_to_torch(z_crop).unsqueeze(0))
+        zf = net.template(z.to(device))
+        
+        z_summary_score = summary_score(zf, state['latent_views'], net, is_latent=True)[0]
         #print("z sum score: " + str(z_summary_score))
         #print("mean score: " + str(mean_summary_score(state['views'], net)))
 
@@ -428,7 +448,8 @@ def siamese_track_multiview(state, im, mask_enable=False, refine_enable=False, d
             #state['views'].append(z_crop)
             state['threshold'] = 1-((1-state['threshold'])*2)
             siamese_init_multiview(im, target_pos, target_sz, state, device=device)
-    
+
+        state['summary_score'] = z_summary_score
     # if score[best_pscore_id] >= 0.999:
     #     wc_z = target_sz[0] + p.context_amount * sum(target_sz)
     #     hc_z = target_sz[1] + p.context_amount * sum(target_sz)
@@ -587,16 +608,6 @@ def siamese_track(state, im, mask_enable=False, refine_enable=False, device='cpu
     target_sz[0] = max(10, min(state['im_w'], target_sz[0]))
     target_sz[1] = max(10, min(state['im_h'], target_sz[1]))
 
-    # if score[best_pscore_id] >= 0.999:
-    #     wc_z = target_sz[0] + p.context_amount * sum(target_sz)
-    #     hc_z = target_sz[1] + p.context_amount * sum(target_sz)
-    #     s_z = round(np.sqrt(wc_z * hc_z))
-    #     # initialize the exemplar
-    #     z_crop = get_subwindow_tracking(im, target_pos, p.exemplar_size, s_z, state['avg_chans'])
-
-    #     z = Variable(z_crop.unsqueeze(0))
-    #     net.template(z.to(device))
-
     state['target_pos'] = target_pos
     state['target_sz'] = target_sz
     state['score'] = score[best_pscore_id]
@@ -743,11 +754,17 @@ def MultiBatchIouMeter(thrs, outputs, targets, start=None, end=None):
                     iou.append(intxn / union)
                 elif union == 0 and intxn == 0:
                     iou.append(1)
+                #cv2.imshow("pred",pred)
+                #cv2.imshow("mask_sum",mask_sum)
+                #cv2.waitKey(1)
             res[j, k] = np.mean(iou)
     return res
 
+def mask_iou(mask1, mask2):
+    pass
 
 def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot_enable=False, device='cpu'):
+    multiview = True
     image_files = video['image_files']
 
     annos = [np.array(Image.open(x)) for x in video['anno_files']]
@@ -769,6 +786,14 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
     object_num = len(object_ids)
     toc = 0
     pred_masks = np.zeros((object_num, len(image_files), annos[0].shape[0], annos[0].shape[1]))-1
+
+    summary_scores = np.zeros((object_num, len(image_files)))
+    add_thrs = np.zeros((object_num, len(image_files)))
+    stop_thrs = np.zeros((object_num, len(image_files)))
+    frames = np.array(range(len(image_files)))
+    obj_views = [None]*object_num
+    scores = np.zeros((object_num, len(image_files)))
+    
     for obj_id, o_id in enumerate(object_ids):
 
         if 'start_frame' in video:
@@ -788,11 +813,20 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
                 target_sz = np.array([w, h])
                 state = siamese_init(im, target_pos, target_sz, model, hp, device=device)  # init tracker
             elif end_frame >= f > start_frame:  # tracking
-                state = siamese_track_multiview(state, im, mask_enable, refine_enable, device=device)  # track
+                state = siamese_track_multiview(state, im, mask_enable, refine_enable, device=device, auto_add_view=multiview)  # track
                 mask = state['mask']
             toc += cv2.getTickCount() - tic
             if end_frame >= f >= start_frame:
                 pred_masks[obj_id, f, :, :] = mask
+
+                # log multiview data
+                if multiview:
+                    summary_scores[obj_id, f] = state['summary_score']
+                    add_thrs[obj_id, f] = state['threshold']
+                    stop_thrs[obj_id, f] = 1-((1-state['threshold'])*2)
+                else:
+                    scores[obj_id, f] = state['score']
+        obj_views[obj_id] = state['views']
     toc /= cv2.getTickFrequency()
 
     if len(annos) == len(image_files):
@@ -815,6 +849,31 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
         for i in range(pred_mask_final.shape[0]):
             cv2.imwrite(join(video_path, image_files[i].split('/')[-1].split('.')[0] + '.png'), pred_mask_final[i].astype(np.uint8))
 
+
+    if multiview:
+        video_path = join('mv_test', args.dataset, 'SiamMask', video['name'])
+        if not isdir(video_path): makedirs(video_path)
+
+        for obj_id in range(object_num):
+            fig, ax = plt.subplots()
+            ax.plot(frames, summary_scores[i,:].T)
+            ax.plot(frames, add_thrs[i,:].T, '--')
+            ax.plot(frames, stop_thrs[i,:].T, '-.')
+            plt.savefig(join(video_path, "obj"+str(obj_id)+'_multiview_results.png'))
+        
+    else:
+        video_path = join('test', args.dataset, 'SiamMask', video['name'])
+        if not isdir(video_path): makedirs(video_path)
+
+        for obj_id in range(object_num):
+            fig, ax = plt.subplots()
+            ax.plot(frames, scores[i,:].T)
+            plt.savefig(join(video_path, "obj"+str(obj_id)+'_results.png'))
+
+    for obj_id, views in enumerate(obj_views):
+        for vid, view in enumerate(views):
+            cv2.imwrite(join(video_path, "obj"+str(obj_id)+"_view"+str(vid)+".png"), view)
+            
     if args.visualization:
         pred_mask_final = np.array(pred_masks)
         pred_mask_final = (np.argmax(pred_mask_final, axis=0).astype('uint8') + 1) * (
@@ -826,6 +885,7 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
             output = ((0.4 * cv2.imread(image_file)) + (0.6 * mask[f,:,:,:])).astype("uint8")
             cv2.imshow("mask", output)
             cv2.waitKey(1)
+            cv2.imwrite(join(video_path, image_files[f].split('/')[-1].split('.')[0] + '.png'), output)
 
     logger.info('({:d}) Video: {:12s} Time: {:02.1f}s Speed: {:3.1f}fps'.format(
         v_id, video['name'], toc, f*len(object_ids) / toc))
@@ -847,7 +907,7 @@ def main():
 
     # setup model
     if args.arch == 'Custom':
-        from custom import Custom
+        from custom_multiview import Custom
         model = Custom(anchors=cfg['anchors'])
     else:
         parser.error('invalid architecture: {}'.format(args.arch))

@@ -1,1 +1,1 @@
-python test_multiview.py --config ../experiments/siammask_sharp/config_davis.json --resume ../experiments/siammask_sharp/SiamMask_DAVIS.pth --mask --refine --dataset DAVIS2017 -l ../experiments/siammask_sharp/logs/test_DAVIS2017_multiview --visualization
+python test_multiview.py --config ../experiments/siammask_sharp/config_davis.json --resume ../experiments/siammask_sharp/SiamMask_DAVIS.pth --mask --refine --dataset DAVIS2017 -l ../experiments/siammask_sharp/logs/test_DAVIS2017_multiview_fast --visualization

@@ -1,0 +1,119 @@
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/ZebraFish
+WARNING: not the same number of files as bounding boxes: 
+10919 annotations vs. 10920 imgs
+Number of images: 10920
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Aquarium1
+Number of images: 7337
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Boxing1
+WARNING: not the same number of files as bounding boxes: 
+20670 annotations vs. 19299 imgs
+Number of images: 19299
+Premature end of JPEG file
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Jet5
+Number of images: 13675
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Helicopter
+Number of images: 17053
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Violinist
+Number of images: 6838
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Lion
+Number of images: 6570
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/DriftCar2
+Number of images: 8572
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/KinBall1
+Number of images: 20230
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Hideaway
+Number of images: 5900
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Boxing2
+No groundtruth_rect.txt found for: /home/cail/Documents/SiamMask/data/tlp/train/Boxing2
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Basketball
+WARNING: not the same number of files as bounding boxes: 
+17970 annotations vs. 16156 imgs
+Number of images: 16156
+Premature end of JPEG file
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Bharatanatyam
+Number of images: 15936
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/KinBall3
+Number of images: 14940
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/BreakfastClub
+Number of images: 22600
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/CarChase4
+No groundtruth_rect.txt found for: /home/cail/Documents/SiamMask/data/tlp/train/CarChase4
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Jet2
+Number of images: 18882
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/PolarBear3
+Number of images: 9531
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Dashcam
+Number of images: 10260
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Parakeet
+No groundtruth_rect.txt found for: /home/cail/Documents/SiamMask/data/tlp/train/Parakeet
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Elephants
+Number of images: 4376
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Boxing3
+Number of images: 19590
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Bike
+Number of images: 4192
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Billiards2
+Number of images: 20070
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Drone2
+Number of images: 8812
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Jet3
+Number of images: 17953
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/MotorcycleChase
+Number of images: 5550
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Badminton2
+Number of images: 16920
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Jet4
+Number of images: 10160
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/CarChase1
+Number of images: 8932
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/CarChase2
+Number of images: 14010
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Jet1
+Number of images: 7403
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/PolarBear2
+WARNING: not the same number of files as bounding boxes: 
+27153 annotations vs. 17528 imgs
+Number of images: 17528
+Premature end of JPEG file
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/ISS
+WARNING: not the same number of files as bounding boxes: 
+28562 annotations vs. 24113 imgs
+Number of images: 24113
+Premature end of JPEG file
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Sam
+Number of images: 4628
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Drone1
+Number of images: 4320
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/KinBall2
+Number of images: 13575
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/DriftCar1
+Number of images: 10129
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Billiards1
+Number of images: 20375
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Boat
+Number of images: 6234
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/IceSkating
+Number of images: 8125
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Badminton1
+Number of images: 15240
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Puppies2
+WARNING: not the same number of files as bounding boxes: 
+22620 annotations vs. 21144 imgs
+Number of images: 21144
+Premature end of JPEG file
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Puppies1
+Number of images: 17730
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Drone3
+Number of images: 6594
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Alladin
+Number of images: 8992
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/PolarBear1
+Number of images: 9501
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Rope
+Number of images: 17503
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/CarChase3
+Number of images: 22860
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Aquarium2
+Number of images: 8182
+Parsing: /home/cail/Documents/SiamMask/data/tlp/train/Mohiniyattam
+Number of images: 15456

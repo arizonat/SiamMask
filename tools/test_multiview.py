@@ -719,7 +719,6 @@ def track_vot(model, video, hp=None, mask_enable=False, refine_enable=False, dev
 
     return lost_times, f / toc
 
-
 def MultiBatchIouMeter(thrs, outputs, targets, start=None, end=None):
     targets = np.array(targets)
     outputs = np.array(outputs)
@@ -760,11 +759,28 @@ def MultiBatchIouMeter(thrs, outputs, targets, start=None, end=None):
             res[j, k] = np.mean(iou)
     return res
 
-def mask_iou(mask1, mask2):
-    pass
+def batch_iou(masks, annos, thrs=0.35):
+    # mask: [obj_id, frame_id, mask_dim1, mask_dim2]
+    # returns ious: [obj_id, frame_id, iou]
+    num_objs = masks.shape[0]
+    num_frames = masks.shape[1]
+
+    ious = np.zeros((num_objs, num_frames))
+
+    for obj_id in range(num_objs):
+        for f in range(num_frames):
+            mask = masks[obj_id, f, :, :] > thrs
+            anno = annos[f] == obj_id + 1
+            intxn = np.sum(np.bitwise_and(mask, anno))
+            union = np.sum(np.bitwise_or(mask, anno))
+            ious[obj_id, f] = intxn / union
+            
+    mean_iou = np.mean(ious, axis=1)
+    return mean_iou, ious
+    
 
 def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot_enable=False, device='cpu'):
-    multiview = True
+    multiview = False
     image_files = video['image_files']
 
     annos = [np.array(Image.open(x)) for x in video['anno_files']]
@@ -849,7 +865,6 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
         for i in range(pred_mask_final.shape[0]):
             cv2.imwrite(join(video_path, image_files[i].split('/')[-1].split('.')[0] + '.png'), pred_mask_final[i].astype(np.uint8))
 
-
     if multiview:
         video_path = join('mv_test', args.dataset, 'SiamMask', video['name'])
         if not isdir(video_path): makedirs(video_path)
@@ -870,6 +885,15 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
             ax.plot(frames, scores[i,:].T)
             plt.savefig(join(video_path, "obj"+str(obj_id)+'_results.png'))
 
+    mean_iou, ious = batch_iou(pred_masks, annos)
+    print("Mean IOU: " + str(mean_iou))
+    
+    for obj_id in range(object_num):
+        fig, ax = plt.subplots()
+        ax.plot(frames, ious[obj_id,:].T)
+        plt.savefig(join(video_path, "obj"+str(obj_id)+"_IOU.png"))
+    np.save(join(video_path, "IOUs.npy"), ious)
+    
     for obj_id, views in enumerate(obj_views):
         for vid, view in enumerate(views):
             cv2.imwrite(join(video_path, "obj"+str(obj_id)+"_view"+str(vid)+".png"), view)
@@ -889,7 +913,8 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
 
     logger.info('({:d}) Video: {:12s} Time: {:02.1f}s Speed: {:3.1f}fps'.format(
         v_id, video['name'], toc, f*len(object_ids) / toc))
-    logger.info('Number frames initiated: %d'%(len(state['views'])))
+    for obj_id in range(len(object_ids)):
+        logger.info('Number views used for obj %d: %d'%(obj_id+1, len(obj_views[obj_id])))
     return multi_mean_iou, f*len(object_ids) / toc
 
 

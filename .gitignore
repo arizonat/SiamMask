@@ -102,3 +102,11 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# linux backups
+*~
+
+# data files
+data/coco/*
+data/vid/*
+data/ytb_vos/*

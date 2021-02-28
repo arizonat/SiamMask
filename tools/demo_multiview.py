@@ -7,6 +7,8 @@ import glob
 from tools.test_multiview import *
 import copy
 import time
+from os.path import join, isdir
+from os import makedirs
 
 bbox = [0,0,0,0] #[ul_r, ul_c, lr_r, lr_c]
 siammask = None
@@ -46,6 +48,9 @@ def mouse_event_callback(event, x, y, flags, param):
         h = np.abs(bbox[3] - bbox[1])
         target_pos = np.array([bbox[0] + w / 2, bbox[1] + h / 2])
         target_sz = np.array([w, h])
+
+        print(bbox)
+        
         if view_id is 0:
             state = siamese_init(img_raw, target_pos, target_sz, siammask, cfg['hp'], device=device)  # init tracker
         else:
@@ -65,6 +70,11 @@ if __name__ == '__main__':
                     help='hyper-parameter of SiamMask in json format')
     parser.add_argument('--base_path', default='/home/cail/data/siammask_test_recordings/2021-02-02-114800.mp4', help='datasets')
     parser.add_argument('--cpu', action='store_true', help='cpu mode')
+    parser.add_argument('--bbox', nargs=4, type=int, help='specify an initial bounding box [ul_x ul_y lr_x lr_y]')
+    parser.add_argument('--save-masks', action='store_true', help='save masks')
+    parser.add_argument('--save-dir', default='results', help='directory to save masks')
+    parser.add_argument('--save-exemplars', action='store_true', help='save exemplars')
+    parser.add_argument('--mv', action='store_true', help='use multiview')
     args = parser.parse_args()
     
     # Setup device
@@ -73,7 +83,7 @@ if __name__ == '__main__':
 
     # Setup Model
     cfg = load_config(args)
-    from custom import Custom
+    from custom_multiview import Custom
     siammask = Custom(anchors=cfg['anchors'])
     if args.resume:
         assert isfile(args.resume), 'Please download {} first.'.format(args.resume)
@@ -96,11 +106,29 @@ if __name__ == '__main__':
         is_file = True
 
     res, img_raw = cap.read()
+    frame = 0
 
+    if args.save_masks:
+        if not isdir(args.save_dir):
+            makedirs(args.save_dir)
+            makedirs(join(args.save_dir, "exemplars"))
+            
     cv2.namedWindow("SiamMask", cv2.WND_PROP_FULLSCREEN)
     cv2.setMouseCallback("SiamMask", mouse_event_callback)
 
-    playing = True
+    if args.bbox:
+        bbox = args.bbox
+        w = np.abs(bbox[2] - bbox[0])
+        h = np.abs(bbox[3] - bbox[1])
+        target_pos = np.array([bbox[0] + w / 2, bbox[1] + h / 2])
+        target_sz = np.array([w, h])
+        state = siamese_init(img_raw, target_pos, target_sz, siammask, cfg['hp'], device=device)
+        tracking = True
+    
+    playing = False
+
+    if args.save_exemplars:
+        print("Saving exemplars on")
 
     while True:
         tic = cv2.getTickCount()
@@ -112,17 +140,33 @@ if __name__ == '__main__':
         if playing is True:
             res, img_raw = cap.read()
 
+            if not res:
+                if args.save_exemplars:
+                    print("saving exemplars")
+                    for v_id, view in enumerate(state['views']):
+                        cv2.imwrite(join(args.save_dir,"exemplars", "exemplar_%d.png"%v_id), view)
+                break
+            
             if tracking:
-                state = siamese_track_multiview(state, img_raw, mask_enable=True, refine_enable=True, device=device, debug=True)  # track
+                state = siamese_track_multiview(state, img_raw, mask_enable=True, refine_enable=True, device=device, debug=True, auto_add_view=args.mv)  # track
                 location = state['ploygon'].flatten()
                 mask = state['mask'] > state['p'].seg_thr
                 
                 img[:, :, 2] = (mask > 0) * 255 + (mask == 0) * img[:, :, 2]
                 bbox_pts = [np.int0(location).reshape((-1, 1, 2))]
                 cv2.polylines(img, bbox_pts, True, (0, 255, 0), 3)
-                print(state['bbox'])
+                print(len(state['views']))
                 print(state['score'])
-                
+
+                if args.save_masks:
+                    mask_img = np.zeros(img.shape)
+                    mask_img[:,:,0] = (mask > 0) * 255
+                    cv2.imwrite(join(args.save_dir, "%05d.png"%(frame)),mask_img)
+
+                #if state['score'] < 0.75:
+                #    playing = False
+                #    print("Threshold: ",state['threshold'])
+            frame = frame + 1
         cv2.imshow("SiamMask", img)
         k = cv2.waitKey(1)
 
